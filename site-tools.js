@@ -62,7 +62,7 @@
         heading = clean(heading);
         // «Фамилия И.О. Тема», «И.О. Фамилия Тема» — и старые анонсы, и новые «… — Тема»
         var m = heading.match(RE_INITIALS_FIRST) || heading.match(RE_SURNAME_FIRST);
-        if (m) return { speaker: clean(m[1]), topic: clean(m[2]).replace(/^[.:–—-]\s*/, '') };
+        if (m && !/^\s*(,|и\s)/.test(m[2])) return { speaker: clean(m[1]), topic: clean(m[2]).replace(/^[.:–—-]\s*/, '') };
         // Имя без инициалов: только по разделителю «Докладчик — Тема»
         var sep = CFG.speakerSep.trim(), i = heading.indexOf(' ' + sep + ' ');
         if (i > 0 && i <= 60) return { speaker: heading.slice(0, i), topic: clean(heading.slice(i + sep.length + 2)) };
@@ -465,7 +465,7 @@
     }
 
     function scanForms(root) {
-        if (!IS_EDITOR) return;
+        // Не только в редакторе: если у формы для докладчиков та же разметка LineAct, поля появятся и там
         [].forEach.call((root || document).querySelectorAll('form#edit_element_form'), function (f) {
             if (isSeminarForm(f)) enhanceForm(f);
         });
@@ -473,7 +473,7 @@
 
     function init() {
         scanForms();
-        if (IS_EDITOR && window.MutationObserver) {
+        if (window.MutationObserver) {
             // формы LineAct подгружаются через Ajax.Updater в #main_content_place
             new MutationObserver(function () { injectStyles(); scanForms(); })
                 .observe(document.body, { childList: true, subtree: true });
