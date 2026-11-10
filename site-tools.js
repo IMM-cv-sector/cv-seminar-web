@@ -29,7 +29,9 @@
         durationMin: 90,
         alarmMin: 30,
         tzOffset: 5,                       // Екатеринбург, UTC+5, без перехода на летнее время
-        zastavkaUrl: BASE + 'zastavka.html'
+        zastavkaUrl: BASE + 'zastavka.html',
+        seminarSection: '462397',          // id раздела «Семинар» в LineAct
+        speakerSep: ' — '                  // «Докладчик — Тема» в заголовке анонса
     }, window.CVS_CONFIG || {});
 
     var IS_EDITOR = /\.edit\./.test(location.hostname);
@@ -57,9 +59,26 @@
     var RE_SURNAME_FIRST = /^([А-ЯЁA-Z][а-яёa-z]+(?:-[А-ЯЁA-Z][а-яёa-z]+)?\s+[А-ЯЁA-Z]\.\s*(?:[А-ЯЁA-Z]\.)?)\s*(.+)$/;
 
     function splitSpeaker(heading) {
+        heading = clean(heading);
+        // «Фамилия И.О. Тема», «И.О. Фамилия Тема» — и старые анонсы, и новые «… — Тема»
         var m = heading.match(RE_INITIALS_FIRST) || heading.match(RE_SURNAME_FIRST);
-        if (!m) return { speaker: '', topic: heading };
-        return { speaker: clean(m[1]), topic: clean(m[2]).replace(/^[.:–—-]\s*/, '') };
+        if (m) return { speaker: clean(m[1]), topic: clean(m[2]).replace(/^[.:–—-]\s*/, '') };
+        // Имя без инициалов: только по разделителю «Докладчик — Тема»
+        var sep = CFG.speakerSep.trim(), i = heading.indexOf(' ' + sep + ' ');
+        if (i > 0 && i <= 60) return { speaker: heading.slice(0, i), topic: clean(heading.slice(i + sep.length + 2)) };
+        return { speaker: '', topic: heading };
+    }
+
+    // «Где»: «Онлайн: url / Офлайн: место» (новый формат) или свободный текст со ссылкой (старый)
+    function splitWhere(text) {
+        text = text || '';
+        var urlMatch = text.match(/(?:https?:\/\/)?[a-z0-9.-]+\.[a-z]{2,}\/[^\s<>"]*/i);
+        var online = urlMatch ? urlMatch[0].replace(/[.,;)]+$/, '') : '';
+        if (online && !/^https?:/i.test(online)) online = 'https://' + online;
+        var place = clean(text.replace(urlMatch ? urlMatch[0] : /$^/, ' ')
+            .replace(/(Онлайн|Офлайн|Очно|online|offline)\s*:/gi, ' ')
+            .replace(/\s*[,;.]\s*$/, '').replace(/^\s*[,;]\s*/, ''));
+        return { online: online, place: place };
     }
 
     function toPublicUrl(href) {
@@ -84,11 +103,8 @@
         var h = m[4] ? +m[4] : 16, mi = m[5] ? +m[5] : 0;
         var start = new Date(Date.UTC(y, mo - 1, d, h - CFG.tzOffset, mi));
 
-        var whereRaw = (bold[1] || '').trim();
-        var urlMatch = whereRaw.match(/https?:\/\/[^\s<>"]+/);
-        var online = urlMatch ? urlMatch[0].replace(/[.,;)]+$/, '') : '';
-        var place = clean(whereRaw.replace(/https?:\/\/\S+/g, '').replace(/(Онлайн|Офлайн|online|offline)\s*:/gi, ' ')
-            .replace(/\s*[,;.]\s*$/, '').replace(/^\s*[,;]\s*/, ''));
+        var where = splitWhere(bold[1]);
+        var online = where.online, place = where.place;
 
         var full = el.querySelector('[id$="_full_link"]');
         var share = content.querySelector('.addthis_toolbox[data-url]');
@@ -322,7 +338,17 @@
             '.cvs-status{font-size:12px;color:#444}',
             '.cvs-token{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px}',
             '.cvs-token input{flex:1 1 220px;padding:4px 8px;border:1px solid rgba(0,0,0,.3);border-radius:4px;font:inherit}',
-            '.cvs-hint{flex-basis:100%;font-size:12px;color:#444}'
+            '.cvs-hint{flex-basis:100%;font-size:12px;color:#444}',
+            '.cvs-form{display:flex;flex-wrap:wrap;gap:8px 12px;margin:0 0 14px;padding:10px 12px;border:1px solid #2a7ab0;',
+            'border-radius:6px;background:rgba(255,255,255,.7);font-size:14px}',
+            '.cvs-form-head{flex-basis:100%;font-weight:bold}',
+            '.cvs-form .cvs-link{font-weight:normal;font-size:12px;background:none;border:0;padding:0;color:#1d5f8c;text-decoration:underline;cursor:pointer}',
+            '.cvs-field{display:flex;flex-direction:column;gap:2px;flex:1 1 200px;min-width:0}',
+            '.cvs-field.cvs-wide{flex:1 1 100%}',
+            '.cvs-field span{font-size:12px;color:#444}',
+            '.cvs-field input{width:100%;box-sizing:border-box;padding:4px 8px;font:inherit}',
+            '.cvs-form.cvs-off .cvs-field,.cvs-form.cvs-off .cvs-hint{display:none}',
+            '.cvs-locked{background:#eee!important;color:#555}'
         ].join('');
         document.head.appendChild(s);
     }
@@ -339,9 +365,121 @@
         host.after(box);
     }
 
+    // ---------- Форма добавления / редактирования анонса ----------
+    // Поля LineAct остаются как есть (сервер их не знает иначе), а над ними появляются
+    // отдельные поля. Из них собираются:
+    //   element[title]    = «Докладчик — Тема»
+    //   data[event_place] = «Онлайн: ссылка» + «Офлайн: место» (каждое на своей строке)
+
+    function isSeminarForm(form) {
+        if (!form.querySelector('#data_event_place') || !form.querySelector('#element_title')) return false;
+        var section = form.querySelector('input[name="section"]');
+        if (section) return section.value === CFG.seminarSection;
+        return /^\/(seminar|e\/)/.test(location.pathname);   // форма редактирования раздел не передаёт
+    }
+
+    function composeTitle(speaker, topic) {
+        speaker = clean(speaker); topic = clean(topic);
+        return speaker && topic ? speaker + CFG.speakerSep + topic : speaker || topic;
+    }
+
+    function composeWhere(online, place) {
+        online = clean(online); place = clean(place);
+        if (online && !/^[a-z][a-z0-9+.-]*:/i.test(online)) online = 'https://' + online;
+        var lines = [];
+        if (online) lines.push('Онлайн: ' + online);
+        if (place) lines.push('Офлайн: ' + place);
+        return lines.join('\n');
+    }
+
+    function enhanceForm(form) {
+        if (form.dataset.cvsEnhanced) return;
+        form.dataset.cvsEnhanced = '1';
+
+        var title = form.querySelector('#element_title');
+        var where = form.querySelector('#data_event_place');
+        var sp = splitSpeaker(title.value);
+        var wh = splitWhere(where.value);
+
+        var panel = el('div', 'cvs-form');
+        var head = el('div', 'cvs-form-head');
+        head.textContent = 'Анонс семинара';
+        var manual = button('править поля LineAct вручную', 'cvs-link');
+        head.append(' · ', manual);
+
+        function field(label, value, placeholder, wide) {
+            var wrap = el('label', 'cvs-field' + (wide ? ' cvs-wide' : ''));
+            var cap = el('span'); cap.textContent = label;
+            var inp = document.createElement('input');
+            inp.type = 'text'; inp.value = value; inp.placeholder = placeholder;
+            wrap.append(cap, inp);
+            panel.append(wrap);
+            return inp;
+        }
+
+        panel.append(head);
+        var fSpeaker = field('Докладчик', sp.speaker, 'И.С. Иванов');
+        var fTopic = field('Тема доклада', sp.topic, 'Название доклада', true);
+        var fOnline = field('Онлайн (ссылка)', wh.online, 'https://videoconf.uran.ru/…', true);
+        var fPlace = field('Очно (место)', wh.place, 'ИММ УрО РАН, а211 — пусто, если только онлайн', true);
+        var preview = el('div', 'cvs-hint');
+        panel.append(preview);
+
+        var synced = true, touched = false;
+        function sync() {
+            if (!synced) return;
+            touched = true;
+            title.value = composeTitle(fSpeaker.value, fTopic.value);
+            where.value = composeWhere(fOnline.value, fPlace.value);
+            preview.textContent = 'На сайте: «' + (title.value || '—') + '»; Где: ' +
+                (where.value.replace(/\n/g, ' · ') || '—');
+        }
+        [fSpeaker, fTopic, fOnline, fPlace].forEach(function (i) { i.addEventListener('input', sync); });
+
+        function lockNative(lock) {
+            [title, where].forEach(function (n) {
+                n.readOnly = lock;
+                n.classList.toggle('cvs-locked', lock);
+                n.title = lock ? 'Заполняется из полей «Анонс семинара» выше' : '';
+            });
+        }
+        manual.addEventListener('click', function () {
+            synced = false;
+            lockNative(false);
+            panel.classList.add('cvs-off');
+            head.textContent = 'Анонс семинара: поля LineAct редактируются вручную';
+        });
+
+        // Старый анонс переписываем в новом формате, только если поля действительно меняли:
+        // иначе после правки опечатки в описании сменился бы заголовок
+        function lines(t) { return t.replace(/\r/g, '').split('\n').map(clean).filter(Boolean).join('\n'); }
+        var isNewFormat = composeTitle(sp.speaker, sp.topic) === clean(title.value) &&
+            composeWhere(wh.online, wh.place) === lines(where.value);
+        lockNative(true);
+        if ((title.value || where.value) && !isNewFormat) {
+            preview.textContent = 'Поля разобраны из старого анонса. Если их изменить, заголовок и место запишутся в новом формате.';
+        }
+        form.addEventListener('submit', function () { if (touched) sync(); });
+        form.insertBefore(panel, form.firstChild);
+        fSpeaker.focus();
+    }
+
+    function scanForms(root) {
+        if (!IS_EDITOR) return;
+        [].forEach.call((root || document).querySelectorAll('form#edit_element_form'), function (f) {
+            if (isSeminarForm(f)) enhanceForm(f);
+        });
+    }
+
     function init() {
+        scanForms();
+        if (IS_EDITOR && window.MutationObserver) {
+            // формы LineAct подгружаются через Ajax.Updater в #main_content_place
+            new MutationObserver(function () { injectStyles(); scanForms(); })
+                .observe(document.body, { childList: true, subtree: true });
+        }
         var events = document.querySelectorAll('.la_element_event');
-        if (!events.length) return;
+        if (!events.length && !document.querySelector('.cvs-form')) return;
         injectStyles();
         [].forEach.call(events, function (node) {
             if (node.querySelector('.cvs-tools')) return;
@@ -352,7 +490,8 @@
         });
     }
 
-    window.CVS = { parseEvent: parseEvent, buildIcs: buildIcs, splitSpeaker: splitSpeaker, init: init, config: CFG };
+    window.CVS = { parseEvent: parseEvent, buildIcs: buildIcs, splitSpeaker: splitSpeaker, splitWhere: splitWhere,
+        composeTitle: composeTitle, composeWhere: composeWhere, init: init, config: CFG };
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
     else init();
