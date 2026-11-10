@@ -26,10 +26,10 @@
    ```
    Генератор заставки ищется рядом со скриптом. Остальное можно переопределить:
    ```html
-   <script>window.CVS_CONFIG = { repo: 'IllDrakon/calendar-bot', branch: 'master', tgChannel: 'cv_seminar' }</script>
+   <script>window.CVS_CONFIG = { repo: 'IMM-cv-sector/calendar-bot', branch: 'master', tgChannel: 'cv_seminar' }</script>
    ```
 3. Публикация из браузера. Нужен fine-grained токен GitHub (Settings → Developer settings → Fine-grained tokens):
-   - Repository access: только `IllDrakon/calendar-bot`.
+   - Repository access: только `IMM-cv-sector/calendar-bot`.
    - Permissions: **Actions: Read and write**, остальное не нужно.
 
    При первом нажатии «Опубликовать в канал» скрипт попросит токен и сохранит его в localStorage этого браузера. В код сайта токен не попадает.

@@ -22,7 +22,7 @@
 
     var CFG = Object.assign({
         publicOrigin: 'https://www.cv.imm.uran.ru',
-        repo: 'IllDrakon/calendar-bot',
+        repo: 'IMM-cv-sector/calendar-bot',
         branch: 'master',
         workflow: 'parse_seminars.yml',
         tgChannel: 'cv_seminar',
