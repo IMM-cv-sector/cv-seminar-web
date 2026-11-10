@@ -367,7 +367,11 @@
             button('📅 В календарь (.ics)', 'cvs-btn', function () { downloadIcs(ev); }),
             link('Google Календарь', googleLink(ev), 'cvs-btn'),
             link('🖼 Заставка', zastavkaLink(ev), 'cvs-btn'),
-            link('✈ Поделиться в Telegram', tgShareLink(ev), 'cvs-btn')
+            // Кнопка, а не <a href="t.me/share…">: блокировщики соцвиджетов (AdGuard в Яндекс Браузере и др.)
+            // прячут ссылки на t.me/share по адресу
+            button('✈ Поделиться в Telegram', 'cvs-btn', function () {
+                window.open(tgShareLink(ev), '_blank', 'noopener');
+            })
         );
         if (IS_EDITOR) box.append(publishControl(ev, box));
         host.after(box);
