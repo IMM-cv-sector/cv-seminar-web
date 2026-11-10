@@ -31,7 +31,12 @@
         tzOffset: 5,                       // Екатеринбург, UTC+5, без перехода на летнее время
         zastavkaUrl: BASE + 'zastavka.html',
         seminarSection: '462397',          // id раздела «Семинар» в LineAct
-        speakerSep: ' — '                  // «Докладчик — Тема» в заголовке анонса
+        speakerSep: ' — ',                 // «Докладчик — Тема» в заголовке анонса
+        // Публичные Google-календари: блок «Подписаться» над анонсами на странице /seminar
+        calendars: [
+            { title: 'Семинары сектора', id: '64d45127c5e794caad7939f63914686be4dd3336b0eea6d3e19c400dbcbf3743@group.calendar.google.com' },
+            { title: 'Конференции и события', id: 'c0434ee3a0296ac91909466bc62f96aa0e48c6e6cd3aafe649d1c55066339262@group.calendar.google.com' }
+        ]
     }, window.CVS_CONFIG || {});
 
     var IS_EDITOR = /\.edit\./.test(location.hostname);
@@ -328,9 +333,9 @@
         s.id = 'cvs-style';
         s.textContent = [
             '.cvs-tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0 4px;font-size:13px;line-height:1.3}',
-            '.cvs-tools .cvs-btn{display:inline-block;padding:4px 10px;border:1px solid rgba(0,0,0,.25);border-radius:4px;',
+            '.cvs-tools .cvs-btn,.cvs-subscribe .cvs-btn{display:inline-block;padding:4px 10px;border:1px solid rgba(0,0,0,.25);border-radius:4px;',
             'background:rgba(255,255,255,.65);color:#222;text-decoration:none;font:inherit;cursor:pointer;white-space:nowrap}',
-            '.cvs-tools .cvs-btn:hover{background:#fff;border-color:rgba(0,0,0,.45)}',
+            '.cvs-tools .cvs-btn:hover,.cvs-subscribe .cvs-btn:hover{background:#fff;border-color:rgba(0,0,0,.45)}',
             '.cvs-tools .cvs-btn-accent{border-color:#2a7ab0;color:#1d5f8c}',
             '.cvs-tools .cvs-btn[disabled]{opacity:.6;cursor:default}',
             '.cvs-tools .cvs-link{background:none;border:0;padding:0;color:#1d5f8c;text-decoration:underline;cursor:pointer;font:inherit}',
@@ -348,7 +353,10 @@
             '.cvs-field span{font-size:12px;color:#444}',
             '.cvs-field input{width:100%;box-sizing:border-box;padding:4px 8px;font:inherit}',
             '.cvs-form.cvs-off .cvs-field,.cvs-form.cvs-off .cvs-hint{display:none}',
-            '.cvs-locked{background:#eee!important;color:#555}'
+            '.cvs-locked{background:#eee!important;color:#555}',
+            '.cvs-subscribe{margin:0 0 16px;padding:10px 12px;border:1px solid rgba(0,0,0,.2);border-radius:6px;background:rgba(255,255,255,.55);font-size:14px}',
+            '.cvs-cal-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0;font-size:13px}',
+            '.cvs-cal-name{min-width:160px;font-weight:bold;font-size:13px}'
         ].join('');
         document.head.appendChild(s);
     }
@@ -363,6 +371,62 @@
         );
         if (IS_EDITOR) box.append(publishControl(ev, box));
         host.after(box);
+    }
+
+    // ---------- Подписка на календари ----------
+
+    function calendarLinks(id) {
+        var ical = 'https://calendar.google.com/calendar/ical/' + encodeURIComponent(id) + '/public/basic.ics';
+        return {
+            google: 'https://calendar.google.com/calendar/u/0?cid=' + btoa(id).replace(/=+$/, ''),
+            web: 'https://calendar.google.com/calendar/embed?src=' + encodeURIComponent(id) + '&ctz=Asia%2FYekaterinburg',
+            ical: ical,
+            webcal: ical.replace(/^https:/, 'webcal:')
+        };
+    }
+
+    function copyButton(text) {
+        var b = button('Скопировать iCal-ссылку', 'cvs-btn', function () {
+            var done = function () { b.textContent = 'Скопировано ✓'; setTimeout(function () { b.textContent = 'Скопировать iCal-ссылку'; }, 2000); };
+            if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, fallback);
+            else fallback();
+            function fallback() {
+                var t = document.createElement('textarea');
+                t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
+                document.body.appendChild(t); t.select();
+                try { document.execCommand('copy'); done(); } catch (e) { b.textContent = 'Не удалось скопировать'; }
+                t.remove();
+            }
+        });
+        b.title = text;
+        return b;
+    }
+
+    function renderSubscribe() {
+        var list = document.getElementById('elements_block');
+        if (!list || !/^\/seminar\/?$/.test(location.pathname) || document.querySelector('.cvs-subscribe')) return;
+        var cals = (CFG.calendars || []).filter(function (c) { return c && c.id; });
+        if (!cals.length) return;
+        var box = el('div', 'cvs-subscribe');
+        var head = el('div', 'cvs-form-head');
+        head.textContent = '📅 Календари сектора';
+        box.append(head);
+        cals.forEach(function (c) {
+            var l = calendarLinks(c.id);
+            var row = el('div', 'cvs-cal-row');
+            var name = el('span', 'cvs-cal-name'); name.textContent = c.title;
+            row.append(name,
+                link('+ Google Календарь', l.google, 'cvs-btn'),
+                link('Apple / Outlook', l.webcal, 'cvs-btn'),
+                copyButton(l.ical),
+                link('Открыть', l.web, 'cvs-btn'));
+            box.append(row);
+        });
+        var hint = el('div', 'cvs-hint');
+        hint.textContent = 'Подписка обновляется сама: новые семинары появятся в вашем календаре. ' +
+            'Для Яндекс Календаря: «Новый календарь → Подписаться» и вставить iCal-ссылку.';
+        box.append(hint);
+        list.parentNode.insertBefore(box, list);
     }
 
     // ---------- Форма добавления / редактирования анонса ----------
@@ -481,6 +545,7 @@
         var events = document.querySelectorAll('.la_element_event');
         if (!events.length && !document.querySelector('.cvs-form')) return;
         injectStyles();
+        renderSubscribe();
         [].forEach.call(events, function (node) {
             if (node.querySelector('.cvs-tools')) return;
             var ev;
