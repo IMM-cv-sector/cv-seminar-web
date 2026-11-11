@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Добавить конференцию</title>
+<style>
+  :root {
+    --bg: #eef5ea; --card: #fff; --ink: #1f2a1c; --muted: #5d6a58; --line: #cfdcc8;
+    --accent: #2e7d32; --accent-ink: #fff; --danger: #b3261e; --code: #f5f8f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #141a13; --card: #1d251b; --ink: #e5eee1; --muted: #9db095; --line: #33402f;
+            --accent: #66bb6a; --accent-ink: #0d1a0c; --danger: #ef8a80; --code: #172015; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 20px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  input, select, textarea { width: 100%; margin-top: 3px; padding: 7px 9px; font: inherit; color: var(--ink);
+         background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+  textarea { resize: vertical; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+  .stage { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr auto; gap: 8px; align-items: end;
+           padding: 10px 0; border-top: 1px dashed var(--line); }
+  .stage:first-of-type { border-top: 0; }
+  .stage label { margin: 0; }
+  .stage.end-only .start { visibility: hidden; }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  button { font: inherit; cursor: pointer; border-radius: 6px; padding: 7px 12px; border: 1px solid var(--line);
+           background: var(--card); color: var(--ink); }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button.icon { padding: 7px 10px; color: var(--danger); }
+  .chip { padding: 4px 10px; font-size: 13px; border-radius: 999px; }
+  pre { margin: 0 0 12px; padding: 12px; background: var(--code); border: 1px solid var(--line); border-radius: 6px;
+        white-space: pre-wrap; word-break: break-word; font: 13px/1.5 ui-monospace, Consolas, monospace; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .note { color: var(--muted); font-size: 13px; margin: 12px 0 0; }
+  .err { color: var(--danger); font-size: 13px; margin: 0 0 10px; }
+  @media (max-width: 620px) {
+    .row2 { grid-template-columns: 1fr; }
+    .stage { grid-template-columns: 1fr 1fr; }
+    .stage .name { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Добавить конференцию</h1>
+  <p class="lead">Заполните поля. Форма соберёт текст, который нужно отправить боту конференций в Telegram:
+    от автора он уйдёт на модерацию, от администратора — сразу в календарь сектора.</p>
+
+  <section>
+    <h2>Конференция</h2>
+    <label>Название *<input id="title" placeholder="Графикон-2027"></label>
+    <div class="row2">
+      <label>Сайт<input id="url" placeholder="https://www.graphicon.ru" inputmode="url"></label>
+      <label>Место<input id="place" placeholder="Екатеринбург / онлайн"></label>
+    </div>
+    <label>Описание (одна-две фразы)<textarea id="description" rows="2"></textarea></label>
+    <label>ID — только если исправляете уже добавленную конференцию
+      <input id="confid" placeholder="grafikon-2027 (есть в карточке конференции в боте)"></label>
+  </section>
+
+  <section>
+    <h2>Этапы и дедлайны</h2>
+    <div id="stages"></div>
+    <div class="presets" id="presets"></div>
+  </section>
+
+  <section>
+    <h2>Текст для бота</h2>
+    <p class="err" id="errors" hidden></p>
+    <pre id="out"></pre>
+    <div class="actions">
+      <button class="primary" id="copy" type="button">Скопировать</button>
+      <button id="open" type="button">Открыть бота в Telegram</button>
+    </div>
+    <p class="note">Бот отвечает примерно раз в час. Если вы ещё не можете добавлять конференции,
+      сначала отправьте боту <code>/author</code>.</p>
+  </section>
+</main>
+
+<script>
+// Имя бота можно передать в адресе: conference.html?bot=имя_бота
+const BOT = new URLSearchParams(location.search).get('bot') || 'cv_conferences_bot';
+
+const PRESETS = [
+  ['Подача тезисов', 'deadline'], ['Подача статьи', 'deadline'], ['Уведомление о решении', 'deadline'],
+  ['Camera-ready', 'deadline'], ['Регистрация', 'range'], ['Проведение', 'range'], ['Свой этап…', 'deadline']
+];
+const $ = id => document.getElementById(id);
+const stagesBox = $('stages');
+
+function fmt(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}.${m}.${y}`;
+}
+
+function addStage(name = '', kind = 'deadline') {
+  const row = document.createElement('div');
+  row.className = 'stage';
+  row.innerHTML = `
+    <label class="name">Этап<input class="sname" placeholder="Название этапа"></label>
+    <label>Тип<select class="kind"><option value="deadline">Дедлайн</option><option value="range">Промежуток</option></select></label>
+    <label class="start">С<input type="date" class="sstart"></label>
+    <label><span class="endlabel">Дата</span><input type="date" class="send"></label>
+    <button type="button" class="icon" title="Убрать этап">✕</button>`;
+  row.querySelector('.sname').value = name;
+  row.querySelector('.kind').value = kind;
+  row.querySelector('.icon').onclick = () => { row.remove(); render(); };
+  row.addEventListener('input', render);
+  row.addEventListener('change', render);
+  stagesBox.append(row);
+  render();
+  if (!name) row.querySelector('.sname').focus();
+  else row.querySelector(kind === 'range' ? '.sstart' : '.send').focus();
+}
+
+PRESETS.forEach(([name, kind]) => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'chip'; b.textContent = '+ ' + name;
+  b.onclick = () => addStage(name.endsWith('…') ? '' : name, kind);
+  $('presets').append(b);
+});
+
+function build() {
+  const lines = [], errors = [];
+  const id = $('confid').value.trim(), title = $('title').value.trim();
+  if (id) lines.push('ID: ' + id);
+  if (!title) errors.push('Укажите название.');
+  lines.push('Название: ' + title);
+  for (const [k, label] of [['url', 'Сайт'], ['place', 'Место'], ['description', 'Описание']]) {
+    const v = $(k).value.replace(/\s+/g, ' ').trim();
+    if (v) lines.push(`${label}: ${v}`);
+  }
+  let count = 0;
+  stagesBox.querySelectorAll('.stage').forEach(row => {
+    const range = row.querySelector('.kind').value === 'range';
+    row.classList.toggle('end-only', !range);
+    row.querySelector('.endlabel').textContent = range ? 'По' : 'Дата';
+    const name = row.querySelector('.sname').value.replace(/:/g, ' ').trim();
+    const a = row.querySelector('.sstart').value, b = row.querySelector('.send').value;
+    if (!name && !b) return;
+    if (!name) return errors.push('У этапа нет названия.');
+    if (!b) return errors.push(`«${name}»: укажите дату.`);
+    if (range && !a) return errors.push(`«${name}»: укажите начало промежутка.`);
+    if (range && a > b) return errors.push(`«${name}»: начало позже конца.`);
+    lines.push(range ? `${name}: ${fmt(a)} – ${fmt(b)}` : `${name}: ${fmt(b)}`);
+    count++;
+  });
+  if (!count) errors.push('Добавьте хотя бы один этап с датой.');
+  return { text: lines.join('\n'), errors };
+}
+
+function render() {
+  const { text, errors } = build();
+  $('out').textContent = text;
+  $('errors').hidden = !errors.length;
+  $('errors').textContent = errors.join(' ');
+  $('copy').disabled = !!errors.length;
+}
+
+async function copy() {
+  const { text } = build();
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) {
+    const t = document.createElement('textarea'); t.value = text; document.body.append(t); t.select();
+    document.execCommand('copy'); t.remove();
+  }
+  $('copy').textContent = 'Скопировано ✓';
+  setTimeout(() => { $('copy').textContent = 'Скопировать'; }, 2000);
+}
+
+$('copy').onclick = copy;
+$('open').onclick = () => window.open('https://t.me/' + BOT, '_blank', 'noopener');
+document.querySelectorAll('section input, section textarea').forEach(el => el.addEventListener('input', render));
+addStage('Подача статьи', 'deadline');
+addStage('Проведение', 'range');
+$('title').focus();
+</script>
+</body>
+</html>
